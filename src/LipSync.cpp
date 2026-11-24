@@ -265,6 +265,12 @@ namespace LipSync
 			// (0..1) multiplied over the authored curves so starts/stops ramp.
 			float current = 0.0f;
 			float lipT = 0.0f;  // lip mode: last playback time sampled (held while fading out)
+			// drive_shown: the mouth the face showed when the line became audible, whether it held
+			// one worth easing from, and how far the line has eased in from it (seconds). See WriteMouth.
+			bool  shownStarted = false;
+			bool  shownEase = false;
+			float shownEaseT = 0.0f;
+			float startShown[LipData::PHONEME_CHANNELS] = {};
 		};
 
 		// Leaked on purpose: the detached ticker thread (EnsureTicker) runs until
@@ -294,6 +300,61 @@ namespace LipSync
 		std::atomic<float> g_attackTau{ 0.03f };
 		std::atomic<float> g_releaseTau{ 0.09f };
 		std::atomic<float> g_minLevel{ 0.04f };
+		std::atomic<bool>  g_driveShown{ true };     // [lipsync] drive_shown
+		std::atomic<float> g_shownEaseSec{ 0.25f };  // [lipsync] shown_ease_ms
+		// drive_shown: a face mouth below this on every written channel counts as closed, so the
+		// line starts without an ease (the jump is within the 0.05-per-frame step the ease keeps to)
+		constexpr float kShownEaseMinHeld = 0.05f;
+
+		// Mfg Fix NG's smooth mode moves each SHOWN phoneme (phoneme3) toward its TARGET
+		// (phenomeKeyFrame) at one face speed per actor, the last caller's. A mod that set a slow
+		// face (SLO VE: 0.75 s) rate-limits a target that changes every frame: a syllable wanting
+		// Oh 0 -> 0.7 in 100 ms reached 0.13. drive_shown writes the shown value too, so the update
+		// has nothing left to slide: speech shows as written at any face speed, and the face's own
+		// eyes/brows/expression keep their slide. Phonemes only, and only while the line is
+		// audible; on the fade-out only the target ramps down, so the face update glides the mouth
+		// shut at its normal speed. When the face held a mouth at the line's start, eases in from
+		// it, so it doesn't snap from a held preset mouth to the line's first frame. A closed mouth
+		// gets no ease: the line's own fade-in already ramps from it, and blending from zero would
+		// only shrink the first syllable (line x ease).
+		// Caller holds a_face->lock.
+		void WriteMouth(Entry& a_entry, RE::BSFaceGenAnimationData* a_face, const float* a_values,
+			std::uint32_t a_count, float a_dt)
+		{
+			auto& phonemes = a_face->phenomeKeyFrame;
+			auto& shown = a_face->phoneme3;
+			const bool driveShown = g_driveShown.load() && a_entry.audible && !a_entry.stopping &&
+				!a_face->dialogueData && shown.values;
+			if (!driveShown) {
+				for (std::uint32_t ch = 0; ch < a_count; ++ch) {
+					phonemes.SetValue(ch, a_values[ch]);
+				}
+				return;
+			}
+			const auto shownCount = std::min(a_count, shown.count);
+			if (!a_entry.shownStarted) {
+				a_entry.shownStarted = true;
+				a_entry.shownEaseT = 0.0f;
+				float held = 0.0f;
+				for (std::uint32_t ch = 0; ch < shownCount; ++ch) {
+					a_entry.startShown[ch] = shown.values[ch];
+					held = std::max(held, std::fabs(shown.values[ch]));
+				}
+				a_entry.shownEase = held >= kShownEaseMinHeld;
+			}
+			a_entry.shownEaseT += a_dt;
+			const float easeSec = g_shownEaseSec.load();
+			const float ease = a_entry.shownEase && easeSec > 0.0f ?
+				std::min(1.0f, a_entry.shownEaseT / easeSec) : 1.0f;
+			for (std::uint32_t ch = 0; ch < a_count; ++ch) {
+				float value = a_values[ch];
+				if (ch < shownCount) {
+					value = a_entry.startShown[ch] + (value - a_entry.startShown[ch]) * ease;
+					shown.SetValue(ch, value);
+				}
+				phonemes.SetValue(ch, value);
+			}
+		}
 
 		std::atomic<bool> g_applyPending{ false };
 		std::once_flag    g_tickerOnce;
@@ -683,6 +744,14 @@ namespace LipSync
 					return true;
 				}
 
+				// drive_shown: leave a fresh line's face alone until the line is heard. Writing the
+				// (zero) fade before that shut a held preset mouth for up to AUDIBLE_TIMEOUT before a
+				// sound. A line that replaced one still on this mouth (drove, inherited in Start)
+				// keeps fading it as before: skipping would freeze the old line's last shape open.
+				if (g_driveShown.load() && !a_entry.audible && !a_entry.stopping && !a_entry.drove) {
+					return false;
+				}
+
 				if (auto* faceData = actor->GetFaceGenAnimationData()) {
 					RE::BSSpinLockGuard guard{ faceData->lock };
 					auto& phonemes = faceData->phenomeKeyFrame;
@@ -712,8 +781,8 @@ namespace LipSync
 							    values[kPhonemeBMP] < 0.25f) {
 								values[kPhonemeAah] = std::max(values[kPhonemeAah], vmax * jawBoost);
 							}
+							WriteMouth(a_entry, faceData, values, count, dt);
 							for (std::uint32_t ch = 0; ch < count; ++ch) {
-								phonemes.SetValue(ch, values[ch]);
 								a_entry.drove = a_entry.drove || values[ch] > 0.001f;
 							}
 						}
@@ -735,10 +804,10 @@ namespace LipSync
 							}
 						}
 					} else if (phonemes.values && phonemes.count > kPhonemeBigAah) {
-						phonemes.SetValue(kPhonemeAah, a_entry.current);
 						// spill into BigAah on loud peaks for a wider open
 						const float spill = std::max(0.0f, a_entry.current - 0.55f) / 0.45f;
-						phonemes.SetValue(kPhonemeBigAah, spill * 0.35f);
+						const float values[2] = { a_entry.current, spill * 0.35f };
+						WriteMouth(a_entry, faceData, values, 2, dt);
 						a_entry.drove = a_entry.drove || a_entry.current > 0.001f;
 					}
 				}
@@ -988,15 +1057,17 @@ namespace LipSync
 		g_pseudoSpeechiness.store(settings->lipsyncPseudoSpeechiness);
 		g_lipJawBoost.store(settings->lipsyncLipJawBoost);
 		g_pseudoJawBase.store(settings->lipsyncPseudoJawBase);
+		g_driveShown.store(settings->lipsyncDriveShown);
+		g_shownEaseSec.store(static_cast<float>(settings->lipsyncShownEaseMs) / 1000.0f);
 		LipData::ClearCache();
 		// one info line per (re)load so "did my au reload take?" is answerable
 		// from the log — a toml set without a reload changes nothing until then
 		logger::info(
-			"LipSync config: enable={} use_lip_files={} frame_interp={:.2f} drive_modifiers={} pseudo={} speechiness={:.2f} gain={:.2f}",
+			"LipSync config: enable={} use_lip_files={} frame_interp={:.2f} drive_modifiers={} pseudo={} speechiness={:.2f} gain={:.2f} drive_shown={} shown_ease_ms={}",
 			settings->lipsyncEnabled, settings->lipsyncUseLipFiles,
 			settings->lipsyncFrameInterp, settings->lipsyncDriveModifiers,
 			settings->lipsyncPseudoPhonemes, settings->lipsyncPseudoSpeechiness,
-			settings->lipsyncGain);
+			settings->lipsyncGain, settings->lipsyncDriveShown, settings->lipsyncShownEaseMs);
 		SetEnabled(settings->lipsyncEnabled);
 	}
 
