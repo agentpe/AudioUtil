@@ -104,13 +104,14 @@ lip_jaw_boost = 0.5           # 0.0-1.0, lip mode only. Drive the jaw (Aah) with
                               # game distance - 0.5-0.7 makes .lip/.fuz lines visibly open. 0 = play
                               # curves verbatim. Never applies to pseudo lips or while BMP is pressed.
 drive_shown = true            # write the mouth the face SHOWS as well as its target, so the face
-                              # update can't slow speech down. Skyrim (and Mfg Fix NG) slide each face
+                              # update can't slow speech down. Mfg Fix NG's smooth mode slides each face
                               # channel toward its target at ONE speed per actor; a scene-face mod that
                               # set a slow face (SLO VE: 0.75 s) made the mouth lag the voice (a syllable
                               # wanting Oh 0.7 reached 0.13). Mouth only, only while the line is heard:
                               # eyes/brows/expression keep their slide, and the mouth glides shut after.
 shown_ease_ms = 250           # drive_shown: blend from the mouth the face showed into the line over
-                              # this long (0 = jump straight to the line's first frame).
+                              # this long (0 = jump straight to the line's first frame). Only when the
+                              # face held an open mouth; from a closed one the line starts as authored.
 frame_interpolation = 0.3     # interpolation STRENGTH between the 30 fps lip frames, 0.0-1.0 (lip +
                               # pseudo modes). 0.0 = hold each frame value until the next (raw stepped
                               # 30 fps playback); 1.0 = fully smooth; 0.3 (default) = partial softening
