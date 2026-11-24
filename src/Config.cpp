@@ -268,6 +268,10 @@ namespace Config
 					(*lipsync)["pseudo_speechiness"].value_or(settings->lipsyncPseudoSpeechiness), 0.0f, 1.0f);
 				settings->lipsyncLipJawBoost = std::clamp(
 					(*lipsync)["lip_jaw_boost"].value_or(settings->lipsyncLipJawBoost), 0.0f, 1.0f);
+				settings->lipsyncDriveShown = (*lipsync)["drive_shown"].value_or(settings->lipsyncDriveShown);
+				settings->lipsyncShownEaseMs = static_cast<std::uint32_t>(std::clamp(
+					(*lipsync)["shown_ease_ms"].value_or(static_cast<std::int64_t>(settings->lipsyncShownEaseMs)),
+					std::int64_t{ 0 }, std::int64_t{ 1000 }));
 				settings->lipsyncPseudoJawBase = std::clamp(
 					(*lipsync)["pseudo_jaw_base"].value_or(settings->lipsyncPseudoJawBase), 0.0f, 1.0f);
 			} else if (lipsync->contains("enable") || lipsync->contains("gain") ||
@@ -279,6 +283,7 @@ namespace Config
 					   lipsync->contains("pseudo_voiced_floor") || lipsync->contains("pseudo_valley_ratio") ||
 					   lipsync->contains("pseudo_min_syl_frames") || lipsync->contains("pseudo_gap_frames") ||
 					   lipsync->contains("pseudo_speechiness") || lipsync->contains("pseudo_jaw_base") || lipsync->contains("lip_jaw_boost") ||
+					   lipsync->contains("drive_shown") || lipsync->contains("shown_ease_ms") ||
 					   lipsync->contains("pseudo_closure")) {
 				logger::warn("[lipsync] scalar settings in an overlay are ignored (base-only); block_categories still merge");
 			}

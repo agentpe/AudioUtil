@@ -242,6 +242,8 @@ namespace Config
 		float         lipsyncPseudoClosure{ 0.85f };      // closure peak weight (lead-in frame = 0.65x this)
 		float         lipsyncPseudoSpeechiness{ 0.30f };  // 0 = open-mouth moan vowels, 1 = full speech phoneme palette (corpus-weighted)
 		float         lipsyncLipJawBoost{ 0.5f };        // lip mode: drive Aah with this fraction of the frame's strongest channel (0 = authored curves verbatim)
+		bool          lipsyncDriveShown{ true };          // write the SHOWN mouth too, so the face update's slide (one speed per actor) can't rate-limit speech
+		std::uint32_t lipsyncShownEaseMs{ 250 };          // drive_shown: ease from the face's mouth into the line over this long
 		float         lipsyncPseudoJawBase{ 1.0f };       // continuous Aah under-layer: fraction of the envelope that always drives the jaw beneath the vowel picks
 		// requested categories that never drive lipsync — the line plays mouth-still.
 		// For pools that aren't vocalization (oral sfx: slurping) or where another
