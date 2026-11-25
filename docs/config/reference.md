@@ -162,6 +162,8 @@ path = 'Sound\fx\MyMod\M4'    # scanned for <Category>\*.wav subfolders
 fallback = "M1"               # optional: backfill empty categories from this slot
 gag_slot = "M4gag"            # optional: muffled parallel slot used when gagged
 # variation = "B"             # optional schema label (see below); default "A"
+# pool_mix = "mix"            # optional: tagged requests mix pools (see below); default "ladder"
+# mix_keep = ["mood", "intensity"]   # with pool_mix: what the mixed pools must share
 ```
 
 | Key | Type | Meaning |
@@ -172,6 +174,8 @@ gag_slot = "M4gag"            # optional: muffled parallel slot used when gagged
 | `fallback` | slot id | Optional. Per-category backfill slot when a category resolves to nothing here. Chains capped at **4 hops**. |
 | `gag_slot` | slot id | Optional. A parallel slot (another `[[slot]]`, same category names, muffled audio) used **instead of this one** when the speaking actor is gagged. See [`[gag]`](#gag). |
 | `variation` | string | Optional per-slot schema label, surfaced to Papyrus via [`GetSlotVariation`](../api/audioutil.md#getslotvariation). `"B"` = the alternate layout, `"D"` = the tagged layout, anything else (incl. unset) = `"A"`; first letter only, case-insensitive. **AudioUtil does not interpret it**: resolution, fallback and scanning are unchanged regardless of value. It exists purely for a consumer mod whose voice packs ship in more than one folder/category layout, so the consumer can read it per resolved slot and gate its own category routing. Leave unset if all packs share one layout. |
+| `pool_mix` | string | Optional, for tagged requests. `"ladder"` (default, also when unset) = the best qualifying pool leads and yields one line when its deck runs out. `"mix"` = one shuffle bag over the best pool **and** every lower qualifying pool that shares its `mix_keep` tokens, so all of them play before any line repeats. Only this slot changes. See [Tags → Mixing pools](../tags.md#mixing-pools-pool_mix). |
+| `mix_keep` | array | With `pool_mix = "mix"`: axis names (`"mood"` = every token on that axis) or single tokens (`"creature"`) that a lower pool must share with the best pool to join its bag. A pool missing one the best pool has stays out. Empty = every qualifying pool mixes. An unknown name is warned and ignored. |
 | `[slot.categories]` | table | Optional explicit categories (below). Win over same-named scanned folders. |
 
 ### `[slot.categories]` — explicit categories

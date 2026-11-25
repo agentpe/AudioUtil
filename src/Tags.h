@@ -25,6 +25,11 @@ namespace Tags
 	// tags against it).
 	void Configure(const Config::Settings& a_settings);
 
+	// an axis name ("mood": every token on that axis) or a single token
+	// ("creature") as a mask; 0 when the vocabulary knows neither. Used for a
+	// slot's mix_keep list (FolderCache::PickNext).
+	Mask MaskOf(std::string_view a_nameOrToken);
+
 	// true when a [tags] vocabulary is loaded; false = tag layer dormant
 	// (FolderCache scans category folders flat, exactly pre-tags behavior)
 	bool IsConfigured();

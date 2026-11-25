@@ -154,7 +154,8 @@ For `PlayVoiceTagged(actor, category, facts)`:
 4. The top pool's own **shuffle bag** picks the file (no repeats until that
    pool's deck empties) — but it **leads, it does not monopolize**. When its
    deck runs out it yields one line to the pool below and is reshuffled to
-   lead again. See [Running out of lines](#running-out-of-lines).
+   lead again. See [Running out of lines](#running-out-of-lines), and
+   [Mixing pools](#mixing-pools-pool_mix) for the per-slot alternative.
 
 Worked example, against the folder above:
 
@@ -206,6 +207,48 @@ single clip `angry` gets you that clip roughly every other angry line, not that
 clip forever. Recording two or three per pool is still much better. With
 [`voice_log`](config/reference.md#general) on, a yielded draw is marked `v` in
 the pool column, so you can see which of your pools are being padded out.
+
+### Mixing pools (`pool_mix`)
+
+The ladder plays the best pool's whole deck between each lower line, and the
+best pool is usually the most specific, so the smallest. A busy scene (a line
+every few seconds) hears that pool over and over while dozens of lines further
+down, all true for the scene, wait their turn one at a time.
+
+A slot can opt into mixing instead:
+
+```toml
+[[slot]]
+id = "F1"
+path = 'Sound\fx\MyMod\F1'
+pool_mix = "mix"
+mix_keep = ["mood", "intensity", "climax", "creature"]
+```
+
+Now a tagged request draws from **one shuffle bag**: the best pool plus every
+lower qualifying pool that carries all of the best pool's `mix_keep` tokens.
+Every line in the bag is equally likely, and no line repeats until all of them
+were heard (nor plays twice in a row across rounds).
+
+`mix_keep` is what keeps the tone. A pool with no mood tag qualifies in every
+mood, so without it a `victim` request would mix in the willing lines; with
+`"mood"` kept, a `victim` best pool only mixes with other `victim` pools, while
+the act details (hole, implement, partner) may still be less specific.
+
+```
+facts: victim intense rcv vaginal cock      mix_keep: mood, intensity
+
+   pool                          ladder        mix
+   victim intense rcv vaginal    leads         in the bag
+   victim intense rcv            1 per round   in the bag
+   victim intense                rarely        in the bag
+   intense rcv vaginal           rarely        out (no victim)
+   (untagged)                    rarely        out
+```
+
+Untagged (legacy, facts = 0) calls and categories with a single qualifying pool
+are unchanged. With `voice_log` on, a mixed draw from below the best pool is
+marked `v`, as a yielded one is.
 
 ## 4. The natives
 

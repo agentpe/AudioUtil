@@ -13,6 +13,7 @@ namespace Tags
 			int  bitWeight[64] = {};      // per-bit axis weight
 			Mask bitAxisMask[64] = {};    // per-bit: mask of ALL tokens on its axis
 			std::vector<std::string> bitToken;  // bit index -> display token
+			std::unordered_map<std::string, Mask> axisMask;  // normalized axis name -> its tokens
 		};
 
 		std::shared_ptr<const Vocab> g_vocab = std::make_shared<Vocab>();
@@ -82,6 +83,7 @@ namespace Tags
 			for (const int b : axisBits) {
 				vocab->bitAxisMask[b] = axisMask;
 			}
+			vocab->axisMask[axis.name] |= axisMask;
 		}
 		if (!vocab->tokenBit.empty()) {
 			logger::info("Tags: vocabulary configured — {} tokens across {} axes",
@@ -90,6 +92,17 @@ namespace Tags
 
 		std::scoped_lock lock{ g_vocabLock };
 		g_vocab = std::move(vocab);
+	}
+
+	Mask MaskOf(std::string_view a_nameOrToken)
+	{
+		const auto vocab = GetVocab();
+		const auto norm = Config::Normalize(a_nameOrToken);
+		if (const auto it = vocab->axisMask.find(norm); it != vocab->axisMask.end()) {
+			return it->second;
+		}
+		const auto it = vocab->tokenBit.find(norm);
+		return it == vocab->tokenBit.end() ? 0 : Mask{ 1 } << it->second;
 	}
 
 	bool IsConfigured()

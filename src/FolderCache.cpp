@@ -87,6 +87,10 @@ namespace FolderCache
 		std::unordered_map<std::string, bool>        g_missLogged;
 		std::mutex   g_lock;
 		std::mt19937 g_rng{ std::random_device{}() };
+		// normalized slot id -> its mix_keep mask, for slots with pool_mix = "mix"
+		// (absent = the ladder). Folder keys are "normslot/category", so PickNext
+		// finds a folder's slot by the key's prefix.
+		std::unordered_map<std::string, Tags::Mask> g_mix;
 
 		// path -> narrow string via the ANSI codepage. path::string() THROWS
 		// std::system_error on a character the codepage cannot express (one
@@ -377,6 +381,22 @@ namespace FolderCache
 		g_folders.clear();
 		g_resolveCache.clear();
 		g_missLogged.clear();
+		g_mix.clear();
+		for (const auto& slot : settings->slots) {
+			if (!slot.poolMix) {
+				continue;
+			}
+			Tags::Mask keep = 0;
+			for (const auto& name : slot.mixKeep) {
+				const auto m = Tags::MaskOf(name);
+				if (!m) {
+					logger::warn("Slot {}: mix_keep '{}' is neither a [tags] axis nor a token - ignored", slot.id, name);
+				}
+				keep |= m;
+			}
+			g_mix[Config::Normalize(slot.id)] = keep;
+			logger::info("Slot {}: pool_mix = mix, keep [{}]", slot.id, Tags::Describe(keep));
+		}
 
 		std::size_t voiceFolders = 0;
 		for (const auto& slot : settings->slots) {
@@ -1003,6 +1023,65 @@ namespace FolderCache
 		}
 	}
 
+	namespace
+	{
+		// pool_mix = "mix". The bag is the best pool (ladder.front()) plus every lower
+		// qualifying pool whose tags hold ALL of the best pool's a_keep tokens, so a
+		// line never changes the scene's tone (a victim scene keeps victim pools, a
+		// creature scene creature ones) while the act details (hole, implement,
+		// partner, beast) may be less specific. Each draw picks a pool with chance
+		// proportional to the lines it has left, which makes every remaining line
+		// equally likely, and the pools refill only once every pool in the bag has
+		// run dry: no line repeats until all of them were heard. RefillDeck keeps a
+		// pool's last clip off the top of its new deck, so a refill never repeats the
+		// line just played. Decks stay per pool, shared with every other request.
+		std::string PickMixed(const std::vector<Pool*>& a_ladder, Tags::Mask a_keep,
+			Tags::Mask* a_poolTags, bool* a_descended)
+		{
+			Pool* const      best = a_ladder.front();
+			const Tags::Mask keep = best->tags & a_keep;
+			std::vector<Pool*> bag;
+			for (Pool* pool : a_ladder) {
+				if ((pool->tags & keep) == keep) {
+					bag.push_back(pool);
+				}
+			}
+			// a pool never drawn from has an empty deck but a full hand of lines
+			const auto left = [](const Pool* a_pool) {
+				return a_pool->deck.empty() && a_pool->lastPlayed == SIZE_MAX ? a_pool->files.size() : a_pool->deck.size();
+			};
+			std::size_t total = 0;
+			for (const Pool* pool : bag) {
+				total += left(pool);
+			}
+			if (total == 0) {  // every line in the bag heard: a new round
+				for (Pool* pool : bag) {
+					RefillDeck(*pool);
+					total += pool->deck.size();
+				}
+			}
+			auto r = std::uniform_int_distribution<std::size_t>{ 0, total - 1 }(g_rng);
+			Pool* draw = bag.back();
+			for (Pool* pool : bag) {
+				if (r < left(pool)) {
+					draw = pool;
+					break;
+				}
+				r -= left(pool);
+			}
+			if (draw->deck.empty()) {  // its first draw
+				RefillDeck(*draw);
+			}
+			if (a_poolTags) {
+				*a_poolTags = draw->tags;
+			}
+			if (a_descended) {
+				*a_descended = draw != best;  // the voice log's "v": a line from below the best pool
+			}
+			return DrawFrom(*draw);
+		}
+	}
+
 	std::string PickNext(const std::string& a_folderKey, Tags::Mask a_facts,
 		Tags::Mask* a_poolTags, bool* a_descended)
 	{
@@ -1043,6 +1122,18 @@ namespace FolderCache
 			}
 			return std::popcount(a_lhs->tags) > std::popcount(a_rhs->tags);
 		});
+
+		// pool_mix = "mix" (opt-in per slot): one shuffle bag over the best pool and every
+		// lower qualifying pool that carries all of the best pool's mix_keep tokens (its
+		// tone: mood, intensity...), every line in it equally likely, none repeating until
+		// all were heard. Pools that would change the tone stay out. See PickMixed.
+		if (ladder.size() > 1) {
+			const auto slash = a_folderKey.find('/');
+			const auto mix = slash == std::string::npos ? g_mix.end() : g_mix.find(a_folderKey.substr(0, slash));
+			if (mix != g_mix.end()) {
+				return PickMixed(ladder, mix->second, a_poolTags, a_descended);
+			}
+		}
 
 		// The best pool LEADS, but it does not hold the category hostage. It used to:
 		// whichever pool scored highest won every draw forever, so a one-line pool

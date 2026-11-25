@@ -434,6 +434,20 @@ namespace Config
 				const char varC = var.empty() ? 'a' :
 					static_cast<char>(std::tolower(static_cast<unsigned char>(var[0])));
 				slot.variation = varC == 'b' ? "B" : varC == 'd' ? "D" : "A";
+				// pool_mix: "mix" = one shuffle bag over the qualifying pools that share
+				// the best pool's mix_keep tokens; anything else (incl. unset) = ladder.
+				const auto mix = Normalize((*table)["pool_mix"].value_or(""s));
+				if (!mix.empty() && mix != "mix" && mix != "ladder") {
+					logger::warn("Slot {}: pool_mix '{}' unknown (use \"mix\" or \"ladder\") - ladder kept", slot.id, mix);
+				}
+				slot.poolMix = mix == "mix";
+				if (const auto* keep = (*table)["mix_keep"].as_array()) {
+					for (const auto& k : *keep) {
+						if (const auto name = k.value<std::string>()) {
+							slot.mixKeep.push_back(Normalize(*name));
+						}
+					}
+				}
 				// sex: 'F' female, 'A' all/any (sex-neutral: creatures, sfx pools), else
 				// 'M' male (the default). First letter only, case-insensitive.
 				const auto sex = (*table)["sex"].value_or(""s);

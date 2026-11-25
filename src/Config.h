@@ -54,6 +54,18 @@ namespace Config
 		// FACTS a call carries, not on this label; a consumer mod sets it and gates
 		// its own category/fact emission on it. Empty/unset = "A".
 		std::string variation;  // "A", "B" or "D"; default "A"
+
+		// optional per-slot pool picking for TAGGED requests (docs/tags.md "Mixing pools").
+		// false (default, unset, "ladder") = the best pool leads and yields one line when
+		// its deck runs out, as always. true ("mix") = one shuffle bag over the best pool
+		// AND every lower qualifying pool that shares the best pool's mixKeep tokens, so a
+		// scene hears all of them before any line repeats. Opt-in per slot: a pack that
+		// never sets it, and every other slot, keeps the ladder.
+		bool poolMix{ false };
+		// axis names or single tokens (normalized) the mixed pools must share with the
+		// best pool, e.g. ["mood", "intensity", "climax", "creature"]: a pool missing one
+		// the best pool has stays out of the bag. Empty = every qualifying pool mixes.
+		std::vector<std::string> mixKeep;
 	};
 
 	// a plugin + local form id reference, resolved to a live form at load
